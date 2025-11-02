@@ -50,13 +50,15 @@ export function createIndexingWorkflow(dataDir) {
     const pdfProcessorNode = new PDFProcessorNode();
     pdfProcessorNode.prepAsync = async (shared, prepRes) => {
         console.log("PDFProcessorNode: Preparing to process:", shared.item);
+        console.log("PDFProcessorNode: prepRes:", prepRes); // Add this log
         pdfProcessorNode.setParams({ filePath: shared.item, action: 'extract_text' });
         return prepRes; // Return prepRes
     };
     pdfProcessorNode.postAsync = async (shared, prepRes, execRes) => {
-        shared.pdfTextContent = execRes; // Store extracted text
-        console.log('PDFProcessorNode: Extracted text length:', shared.pdfTextContent.length);
-        return 'default'; // Explicitly return 'default'
+        console.log('PDFProcessorNode: execRes from PDFProcessorNode:', execRes);
+        shared.pdfTextContent = execRes.text; // Store ONLY the extracted text
+        console.log('PDFProcessorNode: Extracted text length:', shared.pdfTextContent ? shared.pdfTextContent.length : 'undefined (content is null/undefined)');
+        return 'default';
     };
 
     // 5. Semantic Memory Node (within subFlow)
