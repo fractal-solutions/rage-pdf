@@ -111,37 +111,94 @@ export function createIndexingWorkflow(dataDir) {
 }
 
 export function createQueryingWorkflow() {
+    // 1. Interactive Input Node
     const interactiveInputNode = new InteractiveInputNode();
-    
     interactiveInputNode.setParams({
         prompt: 'Enter your query: ',
     });
     interactiveInputNode.postAsync = async (shared, prepRes, execRes) => {
-        shared.interactiveInputResult = execRes;
-        return execRes;
+        shared.interactiveInputResult = execRes; // Store user's raw input
+        console.log('InteractiveInputNode: User input:', shared.interactiveInputResult);
+        return 'default'; // Explicitly return 'default'
     };
 
+    // 2. Set Query Node (TransformNode)
     const setQueryNode = new TransformNode();
-    setQueryNode.setParams({
-        transformFunction: `(data) => ({ query: data.interactiveInputResult })`
-    });
+    setQueryNode.prepAsync = async (shared, prepRes) => {
+        setQueryNode.setParams({
+            input: shared.interactiveInputResult, // Input is the user's raw query
+            transformFunction: `(data) => {
+                console.log('SetQueryNode (TransformNode): Transforming raw input:', data);
+                return { query: data }; // Return an object with 'query' key
+            }`
+        });
+        return prepRes;
+    };
+    setQueryNode.postAsync = async (shared, prepRes, execRes) => {
+        shared.queryForSemanticMemory = execRes; // Store the formatted query object
+        console.log('SetQueryNode: Query for semantic memory:', shared.queryForSemanticMemory);
+        return 'default'; // Explicitly return 'default'
+    };
 
+    // 3. Semantic Memory Node
     const semanticMemoryNode = new SemanticMemoryNode();
-    semanticMemoryNode.setParams({
-        action: 'retrieve',
-        topK: 3,
-    });
+    semanticMemoryNode.prepAsync = async (shared, prepRes) => {
+        if (!shared.queryForSemanticMemory || !shared.queryForSemanticMemory.query) {
+            throw new Error("SemanticMemoryNode: No query found for retrieval.");
+        }
+        semanticMemoryNode.setParams({
+            action: 'retrieve',
+            query: shared.queryForSemanticMemory.query,
+            topK: 3,
+        });
+        console.log('SemanticMemoryNode: Retrieving memories for query:', shared.queryForSemanticMemory.query);
+        return prepRes;
+    };
+    semanticMemoryNode.postAsync = async (shared, prepRes, execRes) => {
+        shared.semanticMemoryResult = execRes; // Store retrieved documents
+        console.log('SemanticMemoryNode: Retrieved memories count:', shared.semanticMemoryResult.length);
+        return 'default'; // Explicitly return 'default'
+    };
 
+    // 4. Transform Node (for LLM prompt)
     const transformNode = new TransformNode();
-    transformNode.setParams({
-        transformFunction: `(data) => ({ prompt: 'Context:\n' + data.semanticMemoryResult.map(doc => doc.content).join('\n\n') + '\n\nQuestion: ' + data.interactiveInputResult + '\n\nAnswer:' })`
-    });
+    transformNode.prepAsync = async (shared, prepRes) => {
+        transformNode.setParams({
+            // Input for this transform node needs both retrieved context and original user query
+            input: {
+                semanticMemoryResult: shared.semanticMemoryResult,
+                interactiveInputResult: shared.interactiveInputResult
+            },
+            transformFunction: `(data) => { const context = data.semanticMemoryResult.map(doc => doc.content).join(' '); const question = data.interactiveInputResult; return 'Context: ' + context + ' Question: ' + question + ' Answer:'; }`
+        });
+        return prepRes;
+    };
+    transformNode.postAsync = async (shared, prepRes, execRes) => {
+        shared.llmPrompt = execRes; // Store the formatted LLM prompt
+        console.log('TransformNode (LLM Prompt): Generated LLM prompt:', shared.llmPrompt.substring(0, 200) + '...');
+        return 'default'; // Explicitly return 'default'
+    };
 
+    // 5. DeepSeek LLM Node
     const llmNode = new DeepSeekLLMNode();
-    llmNode.setParams({
-        apiKey: process.env.DEEPSEEK_API_KEY,
-    });
+    llmNode.prepAsync = async (shared, prepRes) => {
+        if (!process.env.DEEPSEEK_API_KEY) {
+            throw new Error("DeepSeekLLMNode: DEEPSEEK_API_KEY is not set in environment variables.");
+        }
+        llmNode.setParams({
+            apiKey: process.env.DEEPSEEK_API_KEY,
+            prompt: shared.llmPrompt, // Use the formatted prompt
+        });
+        console.log('DeepSeekLLMNode: Sending prompt to LLM...');
+        return prepRes;
+    };
+    llmNode.postAsync = async (shared, prepRes, execRes) => {
+        shared.llmResponse = execRes; // Store LLM's response
+        console.log('DeepSeekLLMNode: LLM Response received.');
+        return 'default'; // Explicitly return 'default'
+    };
 
+    // Querying Flow Chaining
     const queryingFlow = new AsyncFlow();
     queryingFlow.start(interactiveInputNode)
         .next(setQueryNode)
