@@ -7,8 +7,9 @@ import {
     InteractiveInputNode,
     DeepSeekLLMNode,
     IteratorNode,
-    TransformNode, // Moved TransformNode here
+    TransformNode,
 } from '@fractal-solutions/qflow/nodes';
+import { TextChunkingNode } from './nodes/TextChunkingNode'; 
 
 export function createIndexingWorkflow(dataDir) {
     // 1. List Directory Node
@@ -19,7 +20,7 @@ export function createIndexingWorkflow(dataDir) {
     listDirectoryNode.postAsync = async (shared, prepRes, execRes) => {
         shared.directoryFiles = execRes; // Store file names
         shared.dataDir = dataDir;       // Store dataDir for later use
-        //console.log('ListDirectoryNode: Found files:', shared.directoryFiles);
+        console.log('ListDirectoryNode: Found files:', shared.directoryFiles);
         return 'default'; // Explicitly return 'default' to continue flow
     };
 
@@ -27,8 +28,8 @@ export function createIndexingWorkflow(dataDir) {
     const filterPdfNode = new TransformNode();
     filterPdfNode.prepAsync = async (shared, prepRes) => {
         filterPdfNode.setParams({
-            input: shared.directoryFiles, // Explicitly set the input for the TransformNode
-            transformFunction: `(data) => { // transformFunction only takes 'data'
+            input: shared.directoryFiles,
+            transformFunction: `(data) => {
                 console.log('TransformNode (filterPdfNode): Filtering raw data:', data);
                 return data.filter(file => file.endsWith('.pdf'));
             }`
@@ -36,76 +37,121 @@ export function createIndexingWorkflow(dataDir) {
         return prepRes;
     };
     filterPdfNode.postAsync = async (shared, prepRes, execRes) => {
-        // execRes here is the array of filtered PDF filenames (e.g., ['file1.pdf', 'file2.pdf'])
-        // We need to map these to absolute paths using shared.dataDir
         shared.filteredPdfFiles = execRes.map(file => shared.dataDir + '/' + file);
-        //console.log('FilterPdfNode: Filtered and absolute paths:', shared.filteredPdfFiles);
-        return 'default'; // Explicitly return 'default'
-    };
-
-    // 3. Sub-flow for processing each PDF
-    const subFlow = new AsyncFlow();
-
-    // 4. PDF Processor Node (within subFlow)
-    const pdfProcessorNode = new PDFProcessorNode();
-    pdfProcessorNode.prepAsync = async (shared, prepRes) => {
-        //console.log("PDFProcessorNode: Preparing to process:", shared.item);
-        //console.log("PDFProcessorNode: prepRes:", prepRes); // Add this log
-        pdfProcessorNode.setParams({ filePath: shared.item, action: 'extract_text' });
-        return prepRes; // Return prepRes
-    };
-    pdfProcessorNode.postAsync = async (shared, prepRes, execRes) => {
-        //console.log('PDFProcessorNode: execRes from PDFProcessorNode:', execRes);
-        shared.pdfTextContent = execRes.text; // Store ONLY the extracted text
-        //console.log('PDFProcessorNode: Extracted text length:', shared.pdfTextContent ? shared.pdfTextContent.length : 'undefined (content is null/undefined)');
+        console.log('FilterPdfNode: Filtered and absolute paths:', shared.filteredPdfFiles);
         return 'default';
     };
 
-    // 5. Semantic Memory Node (within subFlow)
-    const semanticMemoryNode = new SemanticMemoryNode();
-    semanticMemoryNode.prepAsync = async (shared, prepRes) => {
-        if (!shared.pdfTextContent) {
-            throw new Error("SemanticMemoryNode: No PDF text content found to store.");
-        }
-        const memoryId = shared.item; // Use the file path as a unique ID
-        semanticMemoryNode.setParams({
-            action: 'store',
-            content: shared.pdfTextContent,
-            id: memoryId,
-            metadata: { source: shared.item } // Add metadata for traceability
-        });
-        //console.log('SemanticMemoryNode: Storing memory for:', shared.item);
-        return prepRes; // Return prepRes
-    };
-    semanticMemoryNode.postAsync = async (shared, prepRes, execRes) => {
-        //console.log('SemanticMemoryNode: Memory stored for:', shared.item);
-        return 'default'; // Explicitly return 'default'
-    };
-
-    // Chain nodes within the subFlow
-    subFlow.start(pdfProcessorNode).next(semanticMemoryNode);
-
-    // 6. Iterator Node
-    const iteratorNode = new IteratorNode();
+    // 3. Main Iterator Node (iterates over PDFs)
+    const iteratorNode = new IteratorNode(); // Define it here
     iteratorNode.prepAsync = async (shared, prepRes) => {
         // The items for iteration are in shared.filteredPdfFiles
-        //console.log('IteratorNode: Preparing to iterate over:', shared.filteredPdfFiles.length, 'items');
+        console.log('Main IteratorNode: Preparing to iterate over:', shared.filteredPdfFiles.length, 'PDFs');
         iteratorNode.setParams({
             items: shared.filteredPdfFiles,
-            flow: subFlow,
+            flow: subFlow, // This subFlow processes each PDF and its chunks
         });
         return prepRes; // Return prepRes
     };
     iteratorNode.postAsync = async (shared, prepRes, execRes) => {
-        //console.log('IteratorNode: Iteration completed.');
+        console.log('Main IteratorNode: All PDFs processed.');
         return 'default'; // Explicitly return 'default'
     };
+
+    // 4. Sub-flow for processing each PDF and its chunks
+    const subFlow = new AsyncFlow();
+
+    // 5. PDF Processor Node (within subFlow)
+    const pdfProcessorNode = new PDFProcessorNode();
+    pdfProcessorNode.prepAsync = async (shared, prepRes) => {
+        console.log("PDFProcessorNode: Preparing to process:", shared.item);
+        pdfProcessorNode.setParams({ filePath: shared.item, action: 'extract_text' });
+        return prepRes; // Return prepRes
+    };
+    pdfProcessorNode.postAsync = async (shared, prepRes, execRes) => {
+        shared.fullPdfText = execRes.text; // Store the full extracted text
+        shared.originalFileId = shared.item; // Store the original file path for metadata
+        console.log('PDFProcessorNode: Extracted full text length:', shared.fullPdfText.length);
+        return 'default'; // Explicitly return 'default'
+    };
+
+    // NEW: 6. Text Chunking Node (Custom Node)
+    const textChunkingNode = new TextChunkingNode(); // Use our custom node
+    textChunkingNode.prepAsync = async (shared, prepRes) => {
+        textChunkingNode.setParams({
+            fullText: shared.fullPdfText, // Pass fullText as a parameter
+            minChunkLength: 50 // Optional: configure min chunk length
+        });
+        console.log('TextChunkingNode: Preparing to chunk text.');
+        return prepRes;
+    };
+    textChunkingNode.postAsync = async (shared, prepRes, execRes) => {
+        shared.textChunks = execRes; // execRes will be an array of chunks
+        console.log('TextChunkingNode: Generated', shared.textChunks.length, 'chunks.');
+        return 'default';
+    };
+
+    // NEW: 7. Sub-sub-flow for processing each chunk (embedding and storing)
+    const chunkProcessingSubFlow = new AsyncFlow();
+
+    const semanticMemoryNodeForChunk = new SemanticMemoryNode();
+    semanticMemoryNodeForChunk.prepAsync = async (shared, prepRes) => {
+        // shared.item here will be the object { content: chunk, originalFileId: ..., chunkIndex: ... }
+        if (!shared.item || !shared.item.content) {
+            throw new Error("SemanticMemoryNode: No chunk content found to store.");
+        }
+        const chunkContent = shared.item.content;
+        const originalFileId = shared.item.originalFileId;
+        const chunkIndex = shared.item.chunkIndex;
+        const memoryId = `${originalFileId}_chunk_${chunkIndex}`;
+
+        semanticMemoryNodeForChunk.setParams({
+            action: 'store',
+            content: chunkContent, // The individual chunk content
+            id: memoryId,
+            metadata: { source: originalFileId, chunkIndex: chunkIndex }
+        });
+        console.log('SemanticMemoryNode: Storing chunk for:', originalFileId, 'index:', chunkIndex);
+        return prepRes;
+    };
+    semanticMemoryNodeForChunk.postAsync = async (shared, prepRes, execRes) => {
+        console.log('SemanticMemoryNode: Chunk stored:', shared.item.content.substring(0, 50) + '...');
+        return 'default';
+    };
+
+    chunkProcessingSubFlow.start(semanticMemoryNodeForChunk);
+
+    // NEW: 8. Iterator for Chunks
+    const chunkIteratorNode = new IteratorNode();
+    chunkIteratorNode.prepAsync = async (shared, prepRes) => {
+        // This iterator will iterate over shared.textChunks
+        // Create items with metadata for the sub-sub-flow
+        const itemsForChunkIterator = shared.textChunks.map((chunk, index) => ({
+            content: chunk, // The actual chunk content
+            originalFileId: shared.originalFileId,
+            chunkIndex: index
+        }));
+        chunkIteratorNode.setParams({ // <--- Set params here
+            items: itemsForChunkIterator,
+            flow: chunkProcessingSubFlow,
+        });
+        return prepRes; // Return prepRes
+    };
+    chunkIteratorNode.postAsync = async (shared, prepRes, execRes) => {
+        console.log('ChunkIteratorNode: All chunks processed for current PDF.');
+        return 'default';
+    };
+
+    // Chain nodes within the main subFlow (for each PDF)
+    subFlow.start(pdfProcessorNode)
+        .next(textChunkingNode)
+        .next(chunkIteratorNode); // Iterate over chunks of this PDF
 
     // Main Indexing Flow
     const indexingFlow = new AsyncFlow();
     indexingFlow.start(listDirectoryNode)
         .next(filterPdfNode)
-        .next(iteratorNode);
+        .next(iteratorNode); // This iterator now runs the modified subFlow for each PDF
 
     return indexingFlow;
 }
@@ -184,7 +230,7 @@ export function createQueryingWorkflow() {
         semanticMemoryNode.setParams({
             action: 'retrieve',
             query: shared.queryForSemanticMemory.query,
-            topK: 5,
+            topK: 20,
         });
         console.log('SemanticMemoryNode: Retrieving memories for query:', shared.queryForSemanticMemory.query);
         return prepRes;
