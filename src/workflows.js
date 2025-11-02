@@ -197,10 +197,15 @@ export function createQueryingWorkflow() {
     };
     interactiveInputNode.postAsync = async (shared, prepRes, execRes) => {
         shared.interactiveInputResult = execRes; // Store user's raw input
-        //console.log('InteractiveInputNode: User input:', shared.interactiveInputResult);
-        // Clear llmResponse after displaying it, so it doesn't show up again if no new LLM call is made
+        console.log('InteractiveInputNode: User entered next query:', shared.interactiveInputResult);
+
+        // Check for exit conditions here
+        if (execRes === null || execRes.toLowerCase() === '@exit' || execRes.toLowerCase() === '@quit') {
+            return 'user_exit'; // Return a specific action to terminate the flow
+        }
+
         delete shared.llmResponse;
-        return 'default'; // Explicitly return 'default'
+        return 'default';
     };
 
     // 2. Set Query Node (TransformNode)
@@ -281,12 +286,13 @@ export function createQueryingWorkflow() {
 
     // Querying Flow Chaining
     const queryingFlow = new AsyncFlow();
-    queryingFlow.start(interactiveInputNode) // Start with the interactive input node
-        .next(setQueryNode)
-        .next(semanticMemoryNode)
+    queryingFlow.start(interactiveInputNode)
+        .next(setQueryNode, 'default') // Proceed to setQueryNode on 'default' action
+        .next(null, 'user_exit'); // Terminate flow if 'user_exit' action is returned
+        setQueryNode.next(semanticMemoryNode)
         .next(transformNode)
         .next(llmNode)
-        .next(interactiveInputNode); // <--- Chain back to the interactiveInputNode for the next round
+        .next(interactiveInputNode); // Loop back to interactiveInputNode
 
     return queryingFlow;
 }

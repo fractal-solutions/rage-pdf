@@ -30,15 +30,20 @@ async function main() {
     const queryingWorkflow = createQueryingWorkflow();
     while (true) {
         try {
-            const result = await queryingWorkflow.runAsync(shared);
-            console.log('LLM Response:', result);
+            await queryingWorkflow.runAsync(shared); // No need to store result here, as LLM response is in shared.llmResponse
+            // Check for exit condition after running the workflow
+            const userInput = shared.interactiveInputResult; // Get the latest user input
+
+            if (userInput === null || userInput.toLowerCase() === '@exit' || userInput.toLowerCase() === '@quit') {
+                console.log('Exiting querying workflow.');
+                break;
+            }
+            // The LLM response is now displayed by the interactiveInputNode itself,
+            // so we don't need to log it here.
+            // console.log('LLM Response:', shared.llmResponse); // This line can be removed or modified
         } catch (error) {
             console.error('Error running querying workflow:', error);
-        }
-
-        const interactiveInputNode = queryingWorkflow.startNode;
-        if (interactiveInputNode.params.prompt.toLowerCase() === 'exit' || interactiveInputNode.params.prompt.toLowerCase() === 'quit') {
-            break;
+            return;
         }
     }
 }
