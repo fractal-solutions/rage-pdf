@@ -18,7 +18,7 @@ async function main() {
     const indexingWorkflow = createIndexingWorkflow(dataDir);
     const shared = {};
     try {
-        //await indexingWorkflow.runAsync(shared);
+        await indexingWorkflow.runAsync(shared);
         console.log('Indexing workflow completed.');
     } catch (error) {
         console.error('Error running indexing workflow:', error);
