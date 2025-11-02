@@ -111,14 +111,49 @@ export function createIndexingWorkflow(dataDir) {
 }
 
 export function createQueryingWorkflow() {
-    // 1. Interactive Input Node
+    // 1. Interactive Input Node (Modified to display answer and ask next question)
     const interactiveInputNode = new InteractiveInputNode();
-    interactiveInputNode.setParams({
-        prompt: 'Enter your query: ',
-    });
+    interactiveInputNode.prepAsync = async (shared, prepRes) => {
+        let promptMessage = 'Enter your query: ';
+        let defaultValue = '';
+        let dialogTitle = "Qflow Query"; // Declare dialogTitle here
+
+        if (shared.llmResponse) {
+            let llmAnswer = shared.llmResponse;
+            // Replace all backslashes with double backslashes
+            // Remove markdown bolding (**)
+            llmAnswer = llmAnswer.replace(/\*\*(.*?)\*\*/g, '$1');
+            // Remove all double quotes from the LLM answer
+            llmAnswer = llmAnswer.replace(/"/g, '');
+            // Escape backslashes (still good practice)
+            llmAnswer = llmAnswer.replace(/\\/g, '');
+
+            // Extract the first line for the dialog title
+            const firstNewlineIndex = llmAnswer.indexOf('\n'); // Use '\n' for literal newline
+            if (firstNewlineIndex !== -1) {
+                dialogTitle = llmAnswer.substring(0, firstNewlineIndex).trim();
+                llmAnswer = llmAnswer.substring(firstNewlineIndex + 1).trim(); // Remove the first line from the answer
+            } else {
+                // If no newline, the whole answer is the title (or a very short answer)
+                dialogTitle = llmAnswer.trim();
+                llmAnswer = ''; // Clear the answer if it's all title
+            }
+
+            promptMessage = `${llmAnswer}\n\nEnter your next query (or 'exit' to quit):`;
+        }
+
+        interactiveInputNode.setParams({
+            prompt: promptMessage,
+            defaultValue: defaultValue,
+            title: dialogTitle
+        });
+        return prepRes;
+    };
     interactiveInputNode.postAsync = async (shared, prepRes, execRes) => {
         shared.interactiveInputResult = execRes; // Store user's raw input
         console.log('InteractiveInputNode: User input:', shared.interactiveInputResult);
+        // Clear llmResponse after displaying it, so it doesn't show up again if no new LLM call is made
+        delete shared.llmResponse;
         return 'default'; // Explicitly return 'default'
     };
 
@@ -174,7 +209,8 @@ export function createQueryingWorkflow() {
         return prepRes;
     };
     transformNode.postAsync = async (shared, prepRes, execRes) => {
-        shared.llmPrompt = execRes; // Store the formatted LLM prompt
+        shared.llmPrompt = execRes; 
+        shared.llmPrompt += '\n\nPS: Return a cleanly formatted answer thats ready to be displayed in a dialog box like zenity or kdialog easily and clear with emojis and no markdown', // Use the formatted prompt; // Store the formatted LLM prompt
         console.log('TransformNode (LLM Prompt): Generated LLM prompt:', shared.llmPrompt.substring(0, 200) + '...');
         return 'default'; // Explicitly return 'default'
     };
@@ -187,7 +223,7 @@ export function createQueryingWorkflow() {
         }
         llmNode.setParams({
             apiKey: process.env.DEEPSEEK_API_KEY,
-            prompt: shared.llmPrompt, // Use the formatted prompt
+            prompt: shared.llmPrompt, 
         });
         console.log('DeepSeekLLMNode: Prompt prepared.');
     };
@@ -199,11 +235,12 @@ export function createQueryingWorkflow() {
 
     // Querying Flow Chaining
     const queryingFlow = new AsyncFlow();
-    queryingFlow.start(interactiveInputNode)
+    queryingFlow.start(interactiveInputNode) // Start with the interactive input node
         .next(setQueryNode)
         .next(semanticMemoryNode)
         .next(transformNode)
-        .next(llmNode);
+        .next(llmNode)
+        .next(interactiveInputNode); // <--- Chain back to the interactiveInputNode for the next round
 
     return queryingFlow;
 }
