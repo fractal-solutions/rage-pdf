@@ -181,7 +181,7 @@ export function createQueryingWorkflow() {
 
     // 5. DeepSeek LLM Node
     const llmNode = new DeepSeekLLMNode();
-    llmNode.prepAsync = async (shared, prepRes) => {
+    llmNode.preparePrompt = (shared) => { // Implement preparePrompt directly on the instance
         if (!process.env.DEEPSEEK_API_KEY) {
             throw new Error("DeepSeekLLMNode: DEEPSEEK_API_KEY is not set in environment variables.");
         }
@@ -189,8 +189,7 @@ export function createQueryingWorkflow() {
             apiKey: process.env.DEEPSEEK_API_KEY,
             prompt: shared.llmPrompt, // Use the formatted prompt
         });
-        console.log('DeepSeekLLMNode: Sending prompt to LLM...');
-        return prepRes;
+        console.log('DeepSeekLLMNode: Prompt prepared.');
     };
     llmNode.postAsync = async (shared, prepRes, execRes) => {
         shared.llmResponse = execRes; // Store LLM's response
