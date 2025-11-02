@@ -27,7 +27,8 @@ export function createIndexingWorkflow(dataDir) {
     const filterPdfNode = new TransformNode();
     filterPdfNode.prepAsync = async (shared, prepRes) => {
         filterPdfNode.setParams({
-            transformFunction: `(data) => {
+            input: shared.directoryFiles, // Explicitly set the input for the TransformNode
+            transformFunction: `(data) => { // transformFunction only takes 'data'
                 console.log('TransformNode (filterPdfNode): Filtering raw data:', data);
                 return data.filter(file => file.endsWith('.pdf'));
             }`
