@@ -184,14 +184,14 @@ export function createQueryingWorkflow() {
         semanticMemoryNode.setParams({
             action: 'retrieve',
             query: shared.queryForSemanticMemory.query,
-            topK: 3,
+            topK: 5,
         });
-        //console.log('SemanticMemoryNode: Retrieving memories for query:', shared.queryForSemanticMemory.query);
+        console.log('SemanticMemoryNode: Retrieving memories for query:', shared.queryForSemanticMemory.query);
         return prepRes;
     };
     semanticMemoryNode.postAsync = async (shared, prepRes, execRes) => {
         shared.semanticMemoryResult = execRes; // Store retrieved documents
-        //console.log('SemanticMemoryNode: Retrieved memories count:', shared.semanticMemoryResult.length);
+        console.log('SemanticMemoryNode: Retrieved memories count:', shared.semanticMemoryResult.length);
         return 'default'; // Explicitly return 'default'
     };
 
@@ -210,7 +210,7 @@ export function createQueryingWorkflow() {
     };
     transformNode.postAsync = async (shared, prepRes, execRes) => {
         shared.llmPrompt = execRes; 
-        shared.llmPrompt += '\n\nPS: Return a cleanly formatted answer thats ready to be displayed in a dialog box like zenity or kdialog easily and clear with emojis and no markdown'; // Use the formatted prompt; // Store the formatted LLM prompt
+        shared.llmPrompt += '\n\nPS: Return a cleanly formatted answer thats ready to be displayed in a dialog box like zenity or kdialog easily and clear with emojis and no markdown, remember i use first line as title!'; // Use the formatted prompt; // Store the formatted LLM prompt
         //console.log('TransformNode (LLM Prompt): Generated LLM prompt:', shared.llmPrompt.substring(0, 200) + '...');
         return 'default'; // Explicitly return 'default'
     };
