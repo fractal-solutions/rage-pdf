@@ -1,0 +1,15 @@
+{
+  "name": "rage-pdf",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@fractal-solutions/qflow": "^1.0.44"
+  }
+}
