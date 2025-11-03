@@ -18,10 +18,9 @@ export function createIndexingWorkflow(dataDir) {
         directoryPath: dataDir,
     });
     listDirectoryNode.postAsync = async (shared, prepRes, execRes) => {
-        shared.directoryFiles = execRes; // Store file names
-        shared.dataDir = dataDir;       // Store dataDir for later use
+        shared.directoryFiles = execRes;
+        shared.dataDir = dataDir;  
         console.log('ListDirectoryNode: Found files:', shared.directoryFiles);
-        return 'default'; // Explicitly return 'default' to continue flow
     };
 
     // 2. Filter PDF Node (TransformNode)
@@ -34,12 +33,10 @@ export function createIndexingWorkflow(dataDir) {
                 return data.filter(file => file.endsWith('.pdf'));
             }`
         });
-        return prepRes;
     };
     filterPdfNode.postAsync = async (shared, prepRes, execRes) => {
         shared.filteredPdfFiles = execRes.map(file => shared.dataDir + '/' + file);
         console.log('FilterPdfNode: Filtered and absolute paths:', shared.filteredPdfFiles);
-        return 'default';
     };
 
     // 3. Main Iterator Node (iterates over PDFs)
@@ -51,11 +48,9 @@ export function createIndexingWorkflow(dataDir) {
             items: shared.filteredPdfFiles,
             flow: subFlow, // This subFlow processes each PDF and its chunks
         });
-        return prepRes; // Return prepRes
     };
     iteratorNode.postAsync = async (shared, prepRes, execRes) => {
         console.log('Main IteratorNode: All PDFs processed.');
-        return 'default'; // Explicitly return 'default'
     };
 
     // 4. Sub-flow for processing each PDF and its chunks
@@ -66,13 +61,11 @@ export function createIndexingWorkflow(dataDir) {
     pdfProcessorNode.prepAsync = async (shared, prepRes) => {
         console.log("PDFProcessorNode: Preparing to process:", shared.item);
         pdfProcessorNode.setParams({ filePath: shared.item, action: 'extract_text' });
-        return prepRes; // Return prepRes
     };
     pdfProcessorNode.postAsync = async (shared, prepRes, execRes) => {
         shared.fullPdfText = execRes.text; // Store the full extracted text
         shared.originalFileId = shared.item; // Store the original file path for metadata
         console.log('PDFProcessorNode: Extracted full text length:', shared.fullPdfText.length);
-        return 'default'; // Explicitly return 'default'
     };
 
     // NEW: 6. Text Chunking Node (Custom Node)
@@ -83,12 +76,10 @@ export function createIndexingWorkflow(dataDir) {
             minChunkLength: 50 // Optional: configure min chunk length
         });
         console.log('TextChunkingNode: Preparing to chunk text.');
-        return prepRes;
     };
     textChunkingNode.postAsync = async (shared, prepRes, execRes) => {
         shared.textChunks = execRes; // execRes will be an array of chunks
         console.log('TextChunkingNode: Generated', shared.textChunks.length, 'chunks.');
-        return 'default';
     };
 
     // NEW: 7. Sub-sub-flow for processing each chunk (embedding and storing)
@@ -112,11 +103,9 @@ export function createIndexingWorkflow(dataDir) {
             metadata: { source: originalFileId, chunkIndex: chunkIndex }
         });
         console.log('SemanticMemoryNode: Storing chunk for:', originalFileId, 'index:', chunkIndex);
-        return prepRes;
     };
     semanticMemoryNodeForChunk.postAsync = async (shared, prepRes, execRes) => {
         console.log('SemanticMemoryNode: Chunk stored:', shared.item.content.substring(0, 50) + '...');
-        return 'default';
     };
 
     chunkProcessingSubFlow.start(semanticMemoryNodeForChunk);
@@ -135,11 +124,9 @@ export function createIndexingWorkflow(dataDir) {
             items: itemsForChunkIterator,
             flow: chunkProcessingSubFlow,
         });
-        return prepRes; // Return prepRes
     };
     chunkIteratorNode.postAsync = async (shared, prepRes, execRes) => {
         console.log('ChunkIteratorNode: All chunks processed for current PDF.');
-        return 'default';
     };
 
     // Chain nodes within the main subFlow (for each PDF)
@@ -162,12 +149,11 @@ export function createQueryingWorkflow() {
     interactiveInputNode.prepAsync = async (shared, prepRes) => {
         let promptMessage = 'Enter your query: ';
         let defaultValue = '';
-        let dialogTitle = "Qflow Query"; // Declare dialogTitle here
+        let dialogTitle = "Qflow Query"; 
 
         if (shared.llmResponse) {
             let llmAnswer = shared.llmResponse;
-            // Replace all backslashes with double backslashes
-            // Remove markdown bolding (**)
+            // Replace all backslashes with double backslashes Remove markdown bolding (**)
             llmAnswer = llmAnswer.replace(/\*\*(.*?)\*\*/g, '$1');
             // Remove all double quotes from the LLM answer
             llmAnswer = llmAnswer.replace(/"/g, '');
@@ -193,7 +179,6 @@ export function createQueryingWorkflow() {
             defaultValue: defaultValue,
             title: dialogTitle
         });
-        return prepRes;
     };
     interactiveInputNode.postAsync = async (shared, prepRes, execRes) => {
         shared.interactiveInputResult = execRes; // Store user's raw input
@@ -205,7 +190,6 @@ export function createQueryingWorkflow() {
         }
 
         delete shared.llmResponse;
-        return 'default';
     };
 
     // 2. Set Query Node (TransformNode)
@@ -218,12 +202,10 @@ export function createQueryingWorkflow() {
                 return { query: data }; // Return an object with 'query' key
             }`
         });
-        return prepRes;
     };
     setQueryNode.postAsync = async (shared, prepRes, execRes) => {
         shared.queryForSemanticMemory = execRes; // Store the formatted query object
         //console.log('SetQueryNode: Query for semantic memory:', shared.queryForSemanticMemory);
-        return 'default'; // Explicitly return 'default'
     };
 
     // 3. Semantic Memory Node
@@ -238,12 +220,10 @@ export function createQueryingWorkflow() {
             topK: 20,
         });
         console.log('SemanticMemoryNode: Retrieving memories for query:', shared.queryForSemanticMemory.query);
-        return prepRes;
     };
     semanticMemoryNode.postAsync = async (shared, prepRes, execRes) => {
         shared.semanticMemoryResult = execRes; // Store retrieved documents
         console.log('SemanticMemoryNode: Retrieved memories count:', shared.semanticMemoryResult.length);
-        return 'default'; // Explicitly return 'default'
     };
 
     // 4. Transform Node (for LLM prompt)
@@ -257,13 +237,11 @@ export function createQueryingWorkflow() {
             },
             transformFunction: `(data) => { const context = data.semanticMemoryResult.map(doc => doc.content).join(' '); const question = data.interactiveInputResult; return 'Context: ' + context + ' Question: ' + question + ' Answer:'; }`
         });
-        return prepRes;
     };
     transformNode.postAsync = async (shared, prepRes, execRes) => {
         shared.llmPrompt = execRes; 
         shared.llmPrompt += '\n\nPS: Return a cleanly formatted answer thats ready to be displayed in a dialog box like zenity or kdialog easily and clear with emojis and no markdown, remember i use first line as title!'; // Use the formatted prompt; // Store the formatted LLM prompt
         //console.log('TransformNode (LLM Prompt): Generated LLM prompt:', shared.llmPrompt.substring(0, 200) + '...');
-        return 'default'; // Explicitly return 'default'
     };
 
     // 5. DeepSeek LLM Node
@@ -281,7 +259,6 @@ export function createQueryingWorkflow() {
     llmNode.postAsync = async (shared, prepRes, execRes) => {
         shared.llmResponse = execRes; // Store LLM's response
         //console.log('DeepSeekLLMNode: LLM Response received.');
-        return 'default'; // Explicitly return 'default'
     };
 
     // Querying Flow Chaining
