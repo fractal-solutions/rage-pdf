@@ -40,13 +40,13 @@ export function createIndexingWorkflow(dataDir) {
     };
 
     // 3. Main Iterator Node (iterates over PDFs)
-    const iteratorNode = new IteratorNode(); // Define it here
+    const iteratorNode = new IteratorNode(); 
     iteratorNode.prepAsync = async (shared, prepRes) => {
         // The items for iteration are in shared.filteredPdfFiles
         console.log('Main IteratorNode: Preparing to iterate over:', shared.filteredPdfFiles.length, 'PDFs');
         iteratorNode.setParams({
             items: shared.filteredPdfFiles,
-            flow: subFlow, // This subFlow processes each PDF and its chunks
+            flow: subFlow,
         });
     };
     iteratorNode.postAsync = async (shared, prepRes, execRes) => {
@@ -63,17 +63,17 @@ export function createIndexingWorkflow(dataDir) {
         pdfProcessorNode.setParams({ filePath: shared.item, action: 'extract_text' });
     };
     pdfProcessorNode.postAsync = async (shared, prepRes, execRes) => {
-        shared.fullPdfText = execRes.text; // Store the full extracted text
-        shared.originalFileId = shared.item; // Store the original file path for metadata
+        shared.fullPdfText = execRes.text; 
+        shared.originalFileId = shared.item; 
         console.log('PDFProcessorNode: Extracted full text length:', shared.fullPdfText.length);
     };
 
     // NEW: 6. Text Chunking Node (Custom Node)
-    const textChunkingNode = new TextChunkingNode(); // Use our custom node
+    const textChunkingNode = new TextChunkingNode(); 
     textChunkingNode.prepAsync = async (shared, prepRes) => {
         textChunkingNode.setParams({
-            fullText: shared.fullPdfText, // Pass fullText as a parameter
-            minChunkLength: 50 // Optional: configure min chunk length
+            fullText: shared.fullPdfText, 
+            minChunkLength: 150 
         });
         console.log('TextChunkingNode: Preparing to chunk text.');
     };
@@ -87,7 +87,6 @@ export function createIndexingWorkflow(dataDir) {
 
     const semanticMemoryNodeForChunk = new SemanticMemoryNode();
     semanticMemoryNodeForChunk.prepAsync = async (shared, prepRes) => {
-        // shared.item here will be the object { content: chunk, originalFileId: ..., chunkIndex: ... }
         if (!shared.item || !shared.item.content) {
             throw new Error("SemanticMemoryNode: No chunk content found to store.");
         }
@@ -113,8 +112,6 @@ export function createIndexingWorkflow(dataDir) {
     // NEW: 8. Iterator for Chunks
     const chunkIteratorNode = new IteratorNode();
     chunkIteratorNode.prepAsync = async (shared, prepRes) => {
-        // This iterator will iterate over shared.textChunks
-        // Create items with metadata for the sub-sub-flow
         const itemsForChunkIterator = shared.textChunks.map((chunk, index) => ({
             content: chunk, // The actual chunk content
             originalFileId: shared.originalFileId,
@@ -132,7 +129,7 @@ export function createIndexingWorkflow(dataDir) {
     // Chain nodes within the main subFlow (for each PDF)
     subFlow.start(pdfProcessorNode)
         .next(textChunkingNode)
-        .next(chunkIteratorNode); // Iterate over chunks of this PDF
+        .next(chunkIteratorNode); 
 
     // Main Indexing Flow
     const indexingFlow = new AsyncFlow();
@@ -161,14 +158,14 @@ export function createQueryingWorkflow() {
             llmAnswer = llmAnswer.replace(/\\/g, '');
 
             // Extract the first line for the dialog title
-            const firstNewlineIndex = llmAnswer.indexOf('\n'); // Use '\n' for literal newline
+            const firstNewlineIndex = llmAnswer.indexOf('\n');
             if (firstNewlineIndex !== -1) {
                 dialogTitle = llmAnswer.substring(0, firstNewlineIndex).trim();
-                llmAnswer = llmAnswer.substring(firstNewlineIndex + 1).trim(); // Remove the first line from the answer
+                llmAnswer = llmAnswer.substring(firstNewlineIndex + 1).trim(); 
             } else {
                 // If no newline, the whole answer is the title (or a very short answer)
                 dialogTitle = llmAnswer.trim();
-                llmAnswer = ''; // Clear the answer if it's all title
+                llmAnswer = ''; 
             }
 
             promptMessage = `${llmAnswer}\n\nEnter your next query (or 'exit' to quit):`;
@@ -188,7 +185,6 @@ export function createQueryingWorkflow() {
         if (execRes === null || execRes.toLowerCase() === '@exit' || execRes.toLowerCase() === '@quit') {
             return 'user_exit'; // Return a specific action to terminate the flow
         }
-
         delete shared.llmResponse;
     };
 
@@ -196,7 +192,7 @@ export function createQueryingWorkflow() {
     const setQueryNode = new TransformNode();
     setQueryNode.prepAsync = async (shared, prepRes) => {
         setQueryNode.setParams({
-            input: shared.interactiveInputResult, // Input is the user's raw query
+            input: shared.interactiveInputResult,
             transformFunction: `(data) => {
                 console.log('SetQueryNode (TransformNode): Transforming raw input:', data);
                 return { query: data }; // Return an object with 'query' key
@@ -204,7 +200,7 @@ export function createQueryingWorkflow() {
         });
     };
     setQueryNode.postAsync = async (shared, prepRes, execRes) => {
-        shared.queryForSemanticMemory = execRes; // Store the formatted query object
+        shared.queryForSemanticMemory = execRes; 
         //console.log('SetQueryNode: Query for semantic memory:', shared.queryForSemanticMemory);
     };
 
@@ -222,7 +218,7 @@ export function createQueryingWorkflow() {
         console.log('SemanticMemoryNode: Retrieving memories for query:', shared.queryForSemanticMemory.query);
     };
     semanticMemoryNode.postAsync = async (shared, prepRes, execRes) => {
-        shared.semanticMemoryResult = execRes; // Store retrieved documents
+        shared.semanticMemoryResult = execRes; 
         console.log('SemanticMemoryNode: Retrieved memories count:', shared.semanticMemoryResult.length);
     };
 
@@ -230,7 +226,6 @@ export function createQueryingWorkflow() {
     const transformNode = new TransformNode();
     transformNode.prepAsync = async (shared, prepRes) => {
         transformNode.setParams({
-            // Input for this transform node needs both retrieved context and original user query
             input: {
                 semanticMemoryResult: shared.semanticMemoryResult,
                 interactiveInputResult: shared.interactiveInputResult
@@ -246,7 +241,7 @@ export function createQueryingWorkflow() {
 
     // 5. DeepSeek LLM Node
     const llmNode = new DeepSeekLLMNode();
-    llmNode.preparePrompt = (shared) => { // Implement preparePrompt directly on the instance
+    llmNode.preparePrompt = (shared) => { 
         if (!process.env.DEEPSEEK_API_KEY) {
             throw new Error("DeepSeekLLMNode: DEEPSEEK_API_KEY is not set in environment variables.");
         }
@@ -257,7 +252,7 @@ export function createQueryingWorkflow() {
         //console.log('DeepSeekLLMNode: Prompt prepared.');
     };
     llmNode.postAsync = async (shared, prepRes, execRes) => {
-        shared.llmResponse = execRes; // Store LLM's response
+        shared.llmResponse = execRes; 
         //console.log('DeepSeekLLMNode: LLM Response received.');
     };
 
