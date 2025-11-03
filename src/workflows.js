@@ -73,7 +73,7 @@ export function createIndexingWorkflow(dataDir) {
     textChunkingNode.prepAsync = async (shared, prepRes) => {
         textChunkingNode.setParams({
             fullText: shared.fullPdfText, 
-            minChunkLength: 150 
+            minChunkLength: 50 
         });
         console.log('TextChunkingNode: Preparing to chunk text.');
     };
